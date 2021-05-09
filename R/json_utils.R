@@ -13,12 +13,46 @@ string.to.list <- function(string.vector) {
   return(md.values)
 }
 
+get.track.type <- function(x) {
+  lookup <- c(bw = "bigwig", bigwig = "bigwig", #bigWig = "bigwig", 
+    bdg = "bedgraph", bedgraph = "bedgraph", # bedGraph = "bedgraph", 
+    bed = "bed", narrowpeak = "bed", broadpeak = "bed", 
+    bam = "bam", lr = "longrange", cat = "categorical",
+    hic = "hic", cool = "cool", qbed= "qbed")
+  ext <- sub(".gz$","",basename(x)) %>% tools::file_ext() %>% tolower()
+  type <- lookup[ext]
+  if (sum(is.na(type)) != 0) {
+    warning(paste0("the type of these files cannot be parsed: \n", paste0(x[is.na(type)], collapse = "\n")))
+  }
+  return(type)
+}
 
 
+jsongen <- function(df, vec = NULL, strip = T, outfile=NULL) {
+  if (!is.null(vec)) {
+    df <- data.frame(url = vec)
+  } else {
+    if (is.character(df))
+      df <- read.table(df, as.is = T, header = T)
+  }
 
-jsongen <- function(df, outfile=NULL) {
-  if (is.character(df))
-    df <- read.table(df, as.is = T, header = T)
+  
+  if (is.null(df$name)) {
+    df$name <- df$url
+    if (strip == T) {
+      df$name <- basename(df$name)
+    }
+  }
+  if (is.null(df$metadata)) {
+    df$metadata <- "novalue"
+  }
+  if (is.null(df$options)) {
+    df$options <- "novalue"
+  }
+  if (is.null(df$track_type)) {
+    df$track_type <- get.track.type(df$url)
+  }
+  
   df.list <- df %>% split(factor(df$name, levels = df$name %>% unique()))
   names(df.list) <- NULL
   # print(df)
@@ -35,4 +69,21 @@ jsongen <- function(df, outfile=NULL) {
   if (!is.null(outfile))
     json %>% jsonlite::toJSON() %>%jsonlite::prettify() %>%write(outfile)
   return(json)
+}
+
+json.partition <- function(in.json, n.part) {
+
+  in.js <- jsonlite::read_json(in.json)
+  n.items <- length(in.js)
+  n.per.chunk <- ceiling(n.items/n.part)
+  id <- ceiling((1:n.items)/n.per.chunk)
+  split.list <- in.js %>% split(f = id) 
+  
+  lapply(seq_along(split.list), function(i) {
+    id <- names(split.list)[i]
+    out.json <- sub(".json", paste0("_part", id, ".json"), in.json)
+    split.list[[i]] %>% jsonlite::toJSON(auto_unbox = T) %>% jsonlite::prettify() %>% 
+      write(out.json)
+  })
+  return()
 }
