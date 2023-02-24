@@ -1,5 +1,5 @@
 reinstall <- function(package = "utilsFanc") {
-  pkg.path <- paste0("/bar/cfan/R_packages/", package)
+  pkg.path <- paste0("~/R_packages/", package)
   install.packages(pkg.path, repos = NULL)
   devtools::reload(pkg.path)
 }
@@ -14,7 +14,8 @@ attach.fanc <- function(pkg) {
 
 attach.fanc.2 <- function(pkg) {
   if (pkg == "igraph") {
-    if (system("hostname", intern = T) == "stout") {
+    host.name <- system("hostname", intern = T)
+    if (host.name == "stout" || grepl("^n\\d+$", host.name)) {
       library(pkg,character.only = T)
       return()
     }

@@ -1,0 +1,1 @@
+TABIX = "/bar/cfan/anaconda2/envs/jupyter/bin/tabix"

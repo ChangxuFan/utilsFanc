@@ -87,3 +87,26 @@ json.partition <- function(in.json, n.part) {
   })
   return()
 }
+
+align.json <- function(files, query.genome, type = "genomeAlign", out.json) {
+  if (length(query.genome) != 1) {
+    if (length(files) != length(query.genome)) 
+      stop("query.genome must be either 1 or the same length as files")
+  } else {
+    query.genome <- rep(query.genome, length(files))
+  }
+  
+  json.list <- mapply(function(f, g) {
+    j <- list()
+    j$name <- basename(f)
+    j$type <- type
+    j$url <- bash2ftp(f)
+    j$querygenome <- g
+    return(j)
+  }, files, query.genome, SIMPLIFY = F)
+  names(json.list) <- NULL
+  json <- json.list %>% jsonlite::toJSON(auto_unbox = T) %>% jsonlite::prettify() %>% 
+    write(out.json)
+  cat(bash2ftp(out.json), sep = "\n")
+  return(json)
+}
