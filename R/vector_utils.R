@@ -89,3 +89,53 @@ check.dups <- function(x, x.name, n.examples = 5) {
   }
   return()
 }
+
+intersect.summary <- function(x, y, x.name = "x", y.name = "y", ret.elements = F) {
+  if (ret.elements) {
+    x.only <- x %>% .[!. %in% y]
+    y.only <- y %>% .[!. %in% x]
+    shared <- intersect(x, y)
+    res <- list(x.only, y.only, shared)
+  } else {
+    n.x.only <- x %>% .[!. %in% y] %>% length()
+    n.y.only <- y %>% .[!. %in% x] %>% length()
+    n.shared <- intersect(x, y) %>% length()
+    res <- c(n.x.only, n.y.only, n.shared)
+  }
+  names(res) <- c(paste0(x.name, ".only"), paste0(y.name, ".only"), "shared")
+  return(res)
+}
+centerRollMean <- function (v = NULL, k = NULL) {
+  # this function is stolen from ArchR
+  # never read how it actually works. v is an input vector to smooth, k is window size.
+  o1 <- data.table::frollmean(v, k, align = "right", na.rm = FALSE)
+  if (k%%2 == 0) {
+    o2 <- c(rep(o1[k], floor(k/2) - 1), o1[-seq_len(k - 1)], rep(o1[length(o1)], floor(k/2)))
+  }
+  else if (k%%2 == 1) {
+    o2 <- c(rep(o1[k], floor(k/2)), o1[-seq_len(k - 1)],
+            rep(o1[length(o1)], floor(k/2)))
+  }
+  else {
+    stop("Error!")
+  }
+  o2
+}
+
+loci.in <- function(x, y, return.id.y = F) {
+  gx <- loci.2.gr(x)
+  gy <- loci.2.gr(y)
+  o <- GenomicRanges::findOverlaps(gx, gy)
+  o <- as.data.frame(o)
+  o <- o[!duplicated(o$queryHits),]
+
+  out <- rep(NA, length(x))
+  out[o$queryHits] <- o$subjectHits
+  if (return.id.y) {
+    return(out)
+  } else {
+    Out <- rep(F, length(out))
+    Out[!is.na(out)] <- T
+    return(Out)
+  }
+}

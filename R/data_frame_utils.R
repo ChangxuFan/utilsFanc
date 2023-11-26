@@ -704,3 +704,62 @@ df.melt.by.suffix <- function(df, suffices, id.vars, variable.name) {
   }) %>% Reduce(left_join, .)
   return(df)
 }
+
+loci.dist.mat.core <- function(loci.x, loci.y) {
+  x <- loci.2.gr(loci.x)
+  y <- loci.2.gr(loci.y)
+  dist <- GenomicRanges::distance(x, y, ignore.strand = T)
+  return(dist)
+}
+
+loci.dist.mat <- function(loci.x, loci.y) {
+  check.dups(loci.x, "loci.x")
+  check.dups(loci.y, "loci.y")
+  dist <- outer(loci.x, loci.y, loci.dist.mat.core)
+  rownames(dist) <- loci.x
+  colnames(dist) <- loci.y
+  return(dist)
+}
+
+gr.dist.mat <- function(gr, name.col = NULL) {
+  if (is.null(name.col)) {
+    gr$name <- gr.get.loci(gr)
+  } else {
+    gr$name <- mcols(gr)[, name.col, drop = T]
+  }
+
+  check.dups(x = gr$name, x.name = "gr$name")
+  map <- gr$name
+  names(map) <- gr.get.loci(gr)
+
+  dist <- loci.dist.mat(loci.x = names(map), loci.y = names(map))
+  colnames(dist) <- map[colnames(dist)]
+  rownames(dist) <- map[rownames(dist)]
+  return(dist)
+}
+
+gene.dist.mat <- function(genes, gtf, return.too.close = F, cutoff = 100000) {
+  if (is.character(gtf)) {
+    gtf <- rtracklayer::import(gtf)
+  }
+  check.intersect(genes, "genes",  gtf$gene_name, "gtf$gene_name")
+  gr <- gtf[gtf$gene_name %in% genes] %>% gr2df() %>%
+    dplyr::group_by(gene_name) %>%
+    dplyr::summarise(start = min(start), end = max(end), chr = chr[1]) %>%
+    dplyr::ungroup() %>% as.data.frame() %>%
+    makeGRangesFromDataFrame(keep.extra.columns = T)
+
+  gr <- gr[sort.by(x = gr$gene_name, y = genes, return.order = T)]
+  dist.mat <- gr.dist.mat(gr, name.col = "gene_name")
+  if (!return.too.close) {
+    return(dist.mat)
+  }
+  diag(dist.mat) <- NA
+  dist.df <- reshape2::melt(dist.mat, varnames = c("x", "y"), value.name = "dist") %>% na.omit() %>%
+    dplyr::filter(dist <= cutoff)
+  dist.df <- dist.df %>% factor2character.fanc()
+  dist.df <- dist.df[1:(0.5*nrow(dist.df)),]
+  return(dist.df)
+}
+
+

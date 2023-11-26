@@ -17,7 +17,8 @@ color.hue.fc <- function(n, palette = "R4.fc1") {
                "#DF536B",  "#28E2E5", "black", "gray62"),
     R4.fc2 = c("#2297E6", "#F5C710", "#61D04F", "#CD0BBC", "#F8766D",
                "#DF536B",  "#28E2E5", "black", "gray62"),
-    red_green = c("orangered", "#00BFC4"))
+    red_green = c("orangered", "#00BFC4"),
+    black_yellow = c("black", "#F5C710"))
   # R4.fc1 is basically R4, but with the ggplot2 default red added in...
 
   if (!palette %in% names(palettes)) {
