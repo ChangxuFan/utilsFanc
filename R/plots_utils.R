@@ -516,8 +516,7 @@ pvalue.cal <- function(df, external.p.df = NULL, adjust = NULL,
     #   x <- round(x, digits = 4)
     # }
     x <- scientific.superscript.md(x, add.p = T, use.padj = !is.null(adjust), show.equal.sign = is.null(adjust),
-                                   sci.threshold = 0.001, digits.nonsci = 3,
-                                   ...)
+                                   sci.threshold = 0.001, digits.nonsci = 3)
   })
   # pvalues lower than 0.0001 will be converted to scientific annotations
 
