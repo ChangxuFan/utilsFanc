@@ -11,6 +11,9 @@ color.show <- function(x, show.help = F) {
   return(p)
 }
 color.hue.fc <- function(n, palette = "R4.fc1") {
+  if (tolower(palette) == "archr") {
+    return(ArchR::paletteDiscrete(as.character(1:n)))
+  }
   palettes <- list(
     R4 = c("#CD0BBC", "#F5C710", "#2297E6", "#61D04F", "#DF536B",  "#28E2E5", "black", "gray62"),
     R4.fc1 = c("#CD0BBC", "#F8766D", "#F5C710", "#2297E6", "#61D04F",

@@ -90,6 +90,16 @@ check.dups <- function(x, x.name, n.examples = 5) {
   return()
 }
 
+check.file.exists <- function(x, x.name, n.examples = 5) {
+  ne <- x %>% .[!file.exists(x)]
+  if (length(ne) > 0) {
+    stop(paste0(ifelse(length(x) > 1, "Some of ", ""), x.name, " does not exist: \n",
+                paste0(ne[1:min(length(ne), n.examples)], collapse = "\n")))
+  }
+  return()
+}
+
+
 intersect.summary <- function(x, y, x.name = "x", y.name = "y", ret.elements = F) {
   if (ret.elements) {
     x.only <- x %>% .[!. %in% y]

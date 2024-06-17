@@ -29,9 +29,39 @@ klra.ly49.translate <- function(x = NULL, lookup = "~/genomes/ly49/Klra.Ly49.Loo
   return(res)
 }
 
+klrb.nkrp.translate <- function(x = NULL, lookup = "~/genomes/nkrp/Klrb.Nkrp.Lookup.tsv",
+                                bAll.Nkrp = F, bAll.Klrb = F,
+                                bKeep.not.found = F) {
+  df0 <- read.table(lookup, sep = "\t", header = T)
+  if (is.null(x)) {
+    if (bAll.Nkrp) {
+      return(df0$Nkrp)
+    } else if (bAll.Klrb) {
+      return(df0$Klrb)
+    } else {
+      stop("nothing to do")
+    }
+  }
+  if (any(grepl("Nkrp", x))) {
+    df <- data.frame(Nkrp = x)
+    res <- suppressMessages(df %>% left_join(df0))
+    if (bKeep.not.found) {
+      res$Klrb[is.na(res$Klrb)] <- res$Nkrp[is.na(res$Klrb)]
+    }
+    res <- res$Klrb
+  } else {
+    df <- data.frame(Klrb = x)
+    res <- suppressMessages(df %>% left_join(df0))
+    if (bKeep.not.found) {
+      res$Nkrp[is.na(res$Nkrp)] <- res$Klrb[is.na(res$Nkrp)]
+    }
+    res <- res$Nkrp
+  }
+  return(res)
+}
 
 
-fanc2nylenna <- function(x, tsv = "~/genomes/rn7/ly49/fanc2nylenna.tsv", 
+fanc2nylenna <- function(x, tsv = "~/genomes/rn7/ly49/fanc2nylenna.tsv",
                          to = "n", bStringi = F, out.file = NULL) {
   if (file.exists(x[1])) {
     x <- readLines(x)
@@ -62,14 +92,14 @@ fanc2nylenna <- function(x, tsv = "~/genomes/rn7/ly49/fanc2nylenna.tsv",
     stop("to must be f or n, for fanc and nylenna, respectively")
   }
   if (!bStringi){
-    utilsFanc::check.intersect(x, "input", names(rename.vec), 
+    utilsFanc::check.intersect(x, "input", names(rename.vec),
                                y.name = paste0("column ", ifelse(to == "n", "fanc", "nylenna")))
     out <- rename.vec[x]
     out <- paste0(prefix, out)
   } else {
     rename.vec <- rename.vec[rev(order(nchar(rename.vec)))]
-    out <- stringi::stri_replace_all_fixed(str = x, 
-                                           pattern = paste0("rn7.Ly49", names(rename.vec)), 
+    out <- stringi::stri_replace_all_fixed(str = x,
+                                           pattern = paste0("rn7.Ly49", names(rename.vec)),
                                            replacement = paste0("rn7.Ly49@@@", rename.vec),
                                            vectorize_all = F)
     out <- gsub("@@@", "", out)
@@ -80,3 +110,5 @@ fanc2nylenna <- function(x, tsv = "~/genomes/rn7/ly49/fanc2nylenna.tsv",
   }
   return(out)
 }
+
+

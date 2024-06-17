@@ -158,14 +158,20 @@ gr.up.down.block <- function(gr, dist, size, up = T, ignore.strand = T) {
   return(gr)
 }
 
-write.zip.fanc <- function(df, out.file, bed.shift = F, zip=T, col.names = F, row.names = F, sep = "\t",
+write.zip.fanc <- function(df, out.file, rm.width = T,
+                           bed.shift = F, zip=T, col.names = F, row.names = F, sep = "\t",
                           ez = F) {
   if (is(df, "GRanges")) {
     df <- df %>% `names<-`(NULL) %>% as.data.frame()
     if (ncol(df) < 6)
       df$forth <- paste0("region", 1:nrow(df))
+
+    if (rm.width)
+      df$width <- NULL
+
     df <- df.rearrange.cols(df, "strand", pos = 6)
-    df <- df.rearrange.cols(df, "width", pos = 5)
+    if (!rm.width)
+      df <- df.rearrange.cols(df, "width", pos = 5)
 
   }
   df <- as.data.frame(df)
@@ -173,8 +179,8 @@ write.zip.fanc <- function(df, out.file, bed.shift = F, zip=T, col.names = F, ro
     df[, 2] <- df[, 2] - 1
   }
   system(paste0("mkdir -p ", dirname(out.file)))
-  write.table(df, out.file, sep = sep, quote = F, row.names = row.names, col.names = col.names)
   if (zip == T) {
+    write.table(df, out.file, sep = sep, quote = F, row.names = row.names, col.names = F)
     if (ez) {
       script = "~/scripts/bed_browser_ez.sh"
     } else {
@@ -183,6 +189,9 @@ write.zip.fanc <- function(df, out.file, bed.shift = F, zip=T, col.names = F, ro
     system(paste0(script, " ", out.file))
     cat(utilsFanc::bash2ftp(paste0(out.file, ".gz")))
     cat("\n")
+    write.table(df, out.file, sep = sep, quote = F, row.names = row.names, col.names = col.names)
+  } else {
+    write.table(df, out.file, sep = sep, quote = F, row.names = row.names, col.names = col.names)
   }
   return(out.file)
 }
@@ -225,6 +234,65 @@ import.bed.tabix <- function(bed, gr, tabix = TABIX) {
   system(cmd)
   gr <- utilsFanc::import.bed.fanc(o, return.gr = T)
   return(gr)
+}
+
+merge.bed.color <- function(beds, colors = NULL, out.rgbPeak, genome, ignore.strand = F,
+                            bedToBigBed = "/opt/apps/kentUCSC/334/bedToBigBed") {
+  # merge bed files into a rgbPeak formatted file.
+  # the forth column and strand will be maintained.
+  if (is.null(colors)) {
+    colors <- RColorBrewer::colorRampPalette(c("red", "green"))(length(beds))
+  }
+  if (length(beds) != length(colors)) {
+    stop("length(beds) != length(colors)")
+  }
+  colors <- sapply(colors, function(color) {
+    if (!grepl(",", color)) {
+      color <- col2rgb(color)[, 1] %>% paste0(collapse = ",")
+    }
+    return(color)
+  })
+  df.rgb <- lapply(seq_along(beds), function(i) {
+    bed <- beds[i]
+    if (length(readLines(bed)) == 0) {
+      # return()
+      bed <- data.frame(chr = "chr1", start = 1, end = 2)
+    } else {
+      bed <- utilsFanc::import.bed.fanc(bed)
+    }
+    bed <- bed[, 1:min(6, ncol(bed))]
+    for (col in c("forth", "fifth")) {
+      if (!col %in% colnames(bed)) {
+        # bed[, col] <- paste0(rep("A", 10000), collapse = "")
+        bed[, col] <- "^N "
+        # bed[, col] <- "A"
+        # this is an invisible character copied from https://www.editpad.org/tool/invisible-character
+      }
+    }
+
+    if (is.null(bed$strand) || ignore.strand) {
+      bed$strand <- "."
+    }
+
+    bed$fifth <- 1
+    bed$thickStart <- bed$start + 1
+    bed$thickEnd <- bed$end
+    bed$color <- colors[i]
+    if (ncol(bed) != 9) {
+      stop("ncol(bed) != 9")
+    }
+    return(bed)
+  }) %>% do.call(rbind, .)
+  dir.create(dirname(out.rgbPeak), showWarnings = F, recursive = T )
+  df.rgb <- df.rgb %>% arrange(chr, start)
+  temp.bed <- paste0(out.rgbPeak, ".bed")
+  write.table(df.rgb, temp.bed, sep = "\t", quote = F, col.names = F, row.names = F)
+  chrom.sizes <- paste0("~/genomes/", genome, "/", genome, ".chrom.sizes")
+  cmd <- paste0(bedToBigBed, " ", temp.bed, " ", chrom.sizes, " ", out.rgbPeak)
+  system(cmd)
+  cat(utilsFanc::bash2ftp(filename = out.rgbPeak))
+  cat("\n")
+  return(out.rgbPeak)
 }
 
 binarize.columns <- function(df, col) {
@@ -476,7 +544,14 @@ gr.fit2bin <- function(x, bin.size, expand = T, style = "GRanges") {
   return(res)
 }
 
-gr.fast.annot <- function(obj, genome, anno.cols = "SYMBOL", use.klraps = T) {
+gr.fast.annot <- function(obj, genome, anno.cols = "SYMBOL", use.klraps = T,
+                          narrow.promoter.boundaries = F,
+                          simplify.location = F,
+                          collapse.downstream = T) {
+  # anno.cols: SYMBOL for gene name. annotation for location such as exons, promoters, etc
+  promoter.boundaries <- c(-3000, 3000)
+  if (narrow.promoter.boundaries) promoter.boundaries <- c(-1000, 500)
+
   if (genome == "mm10") {
     if (use.klraps) {
       TxDb <- AnnotationDbi::loadDb(file = "~/genomes/mm10/gencode/TxDb.mm10.gencode.v24.klraps.sqlite")
@@ -503,7 +578,7 @@ gr.fast.annot <- function(obj, genome, anno.cols = "SYMBOL", use.klraps = T) {
     gr <- obj
   }
   gr$tempt.id <- 1:length(gr)
-  anno <- ChIPseeker::annotatePeak(peak = gr, TxDb = TxDb, annoDb = annoDb)
+  anno <- ChIPseeker::annotatePeak(peak = gr, TxDb = TxDb, annoDb = annoDb, tssRegion = promoter.boundaries)
   anno <- anno@anno %>% mcols() %>% as.data.frame()
   if (nrow(anno) != length(gr)) {
     stop("nrow(anno) != length(gr)")
@@ -515,6 +590,29 @@ gr.fast.annot <- function(obj, genome, anno.cols = "SYMBOL", use.klraps = T) {
   }
   mcols(gr) <- left_join(as.data.frame(mcols(gr)), anno)
   mcols(gr)$tempt.id <- NULL
+
+  if (anno.cols == "annotation" && simplify.location) {
+    if (!narrow.promoter.boundaries)
+      stop("simplify.location only works for narrow.promoter.boundaries == T")
+    gr$annotation <- gr$annotation %>% sub("Intron.+", "Intron", .)
+    gr$annotation <- gr$annotation %>% sub("Exon.+", "Exon", .)
+
+    anno.levels <- c("Promoter", "5' UTR", "Exon", "Intron", "3' UTR",
+                     "Downstream (1-2kb)", "Downstream (<1kb)", "Downstream (2-3kb)",
+                     "Distal Intergenic")
+
+    if (collapse.downstream) {
+      gr$annotation[grepl("Downstream", gr$annotation)] <- "Intergenic"
+      gr$annotation[grepl("Distal Intergenic", gr$annotation)] <- "Intergenic"
+      anno.levels <- c("Promoter", "5' UTR", "Exon", "Intron", "3' UTR", "Intergenic")
+    }
+
+    anno.levels <- anno.levels %>% .[. %in% gr$annotation]
+    utilsFanc::check.intersect(gr$annotation, "gr$annotation", anno.levels, "anno.levels")
+    gr$annotation <- factor(gr$annotation, levels = anno.levels)
+
+  }
+
   if (se.flag == T) {
     rowRanges(obj) <- gr
   } else {
@@ -762,4 +860,18 @@ gene.dist.mat <- function(genes, gtf, return.too.close = F, cutoff = 100000) {
   return(dist.df)
 }
 
+gr.split.train.test <- function(gr, n.test) {
+  if (n.test > 0.5 * length(gr)) {
+    stop("n.test > 0.5 * length(gr)")
+  }
+  test.id <- sample(1:length(gr), size = n.test, replace = F)
+  bTest <- (1:length(gr)) %in% test.id
+  grl <- list(train = gr[!bTest], test = gr[bTest])
+  return(grl)
+}
 
+# mat.collapseRows.fanc <- function(mat, row.groups) {
+#   # The inspiration for collapse.method is from https://rdrr.io/cran/WGCNA/man/collapseRows.html
+#   # From this paper: Strategies for aggregating gene expression data: The collapseRows R function
+#   # I couldn't get the package to install so I implemented my own "lite" version
+# }

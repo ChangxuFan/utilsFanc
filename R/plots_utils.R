@@ -140,14 +140,14 @@ png.wrap <- function (pngs, add.title = F,
 # }
 
 
-barplot.pub.3 <- function(df, x, y, color.by = NULL,
+barplot.pub.3 <- function(df, x, y, color.by = NULL, show.legend = T,
                           shape.by = NULL, black.dots = F, jitter.dots = F,
                           palette.fc = "R4.fc2",
                           genomic.x = NULL, genomic.rescale = T, genomic.scale.to = NULL,
                           bar.width = 0.9, dodge.width = 1,
                           pt.size = 1.4, stroke.size = 0.4,
                           bar.line.size = 0.8,
-                          error.bar.line.size = 0.2,error.bar.width = 0.6,
+                          show.error.bar = T, error.bar.line.size = 0.2,error.bar.width = 0.6,
                           spread.seed = 0, spread.width = 0.5, spread.bin.size = NULL,
                           add.pval = F, pval.adjust = NULL,
                           pval.group.1, pval.group.2, pval.use.star = T,
@@ -287,13 +287,15 @@ barplot.pub.3 <- function(df, x, y, color.by = NULL,
       scale_fill_manual(values = color.map)
   }
 
-  p <- p +
-    geom_errorbar(
-    data = df.sum,
-    aes(x = fac, ymin = mean-sd, ymax=mean+sd),
-    position = position_dodge(width = dodge.width),
-    width = error.bar.width, size = error.bar.line.size, color = "black")
+  if (show.error.bar) {
+    p <- p +
+      geom_errorbar(
+        data = df.sum,
+        aes(x = fac, ymin = mean-sd, ymax=mean+sd),
+        position = position_dodge(width = dodge.width),
+        width = error.bar.width, size = error.bar.line.size, color = "black")
 
+  }
   p <- p + scale_x_continuous(breaks = unique(df$fac), labels = unique(df[, x]),
                               expand = expansion(add = 0.2))
 
@@ -312,24 +314,44 @@ barplot.pub.3 <- function(df, x, y, color.by = NULL,
       data = pval.df,
       aes(x = x.start, xend = x.end, y = y.bar, yend = y.bar), size = 0.2,
       inherit.aes = F)
+    if (pval.use.star) {
+      p <- p + geom_text(
+        data = pval.df,
+        aes_string(x = "x.mid", y = "y.text",
+                   label = ifelse(pval.use.star, "star", "p.sci")),
+        family = "Arial",
+        size = 2,
+        inherit.aes = F
+      )
+    } else {
+      p <- p +
+        ggtext::geom_richtext(
+          data = pval.df,
+          aes_string(x = "x.mid", y = "y.text",
+                     label = ifelse(pval.use.star, "star", "p.sci")),
+          fill = NA, label.color = NA, # remove background and outline
+          label.padding = grid::unit(rep(0, 4), "pt"), # remove padding
+          family = "Arial",
+          size = 1.8,
+          inherit.aes = F
+        )
 
-    p <- p + geom_text(
-      data = pval.df,
-      aes_string(x = "x.mid", y = "y.text",
-                 label = ifelse(pval.use.star, "star", "p.sci")),
-      family = "Arial", size = 2,
-      inherit.aes = F
-    )
+    }
+
   }
+  if (!show.legend)
+    p <- p + theme(legend.position = "None")
   return(p)
 }
 
 
 
 theme.fc.1 <- function(p, text.size = 6, rm.x.ticks = F, rotate.x.45 = F,
-                       italic.x = T, no.guides.order = F) {
+                       italic.x = T, no.guides.order = F, font = "Arial") {
   p <- p + theme_classic() +
-    theme(text = element_text(size = text.size, family = "Arial", color = "black"),
+    theme(text = element_text(size = text.size, color = "black",
+                              # family = "Arial"
+                              ),
           # legend.position = "none",
           legend.position = "bottom",
           legend.margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "in"),
@@ -338,19 +360,24 @@ theme.fc.1 <- function(p, text.size = 6, rm.x.ticks = F, rotate.x.45 = F,
           legend.spacing = unit(0.02, "in"),
           legend.key.size = unit(0.05, "in"),
           legend.box = "vertical",
-          legend.title = element_text(size = text.size, family = "Arial"),
+          legend.title = element_blank(),
+          legend.text = element_text(size = text.size, family = font),
           axis.title = element_blank(),
           axis.text.x = element_text(
-            face = ifelse(italic.x, "italic", "plain"), size = text.size, family = "Arial", color = "black"),
+            face = ifelse(italic.x, "italic", "plain"), size = text.size, family = font,
+            color = "black"),
           axis.text.y = element_text(
-            size = text.size, family = "Arial", color = "black"),
+            size = text.size, family = font,
+            color = "black"),
           axis.line.x.bottom = element_line(size = 0.2),
           axis.line.y.left = element_line(size = 0.2),
           axis.ticks.x = element_line(size = 0.2),
           axis.ticks.length.x = unit(ifelse(rm.x.ticks, 0, 0.02), "in"),
           axis.ticks.y = element_line(size = 0.2),
           axis.ticks.length.y = unit(0.02, "in"),
-          plot.margin = unit(c(0.04, 0.04, 0.01, 0), units = "in"))
+          plot.margin = unit(c(0.04, 0.04, 0.01, 0), units = "in"),
+          plot.title = element_text(
+            size = text.size, hjust = 0.5, margin = margin(b = 0, unit = "in")))
   if (rotate.x.45) {
     p <- p + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
   }
@@ -360,12 +387,45 @@ theme.fc.1 <- function(p, text.size = 6, rm.x.ticks = F, rotate.x.45 = F,
   return(p)
 }
 
+scientific.superscript.md <- function(x, sci.threshold = 0.0001, digits.nonsci = 4,
+                                      digits.sci = 1, add.p = F, use.padj = F,
+                                      show.equal.sign = T, new.line = T) {
+  sapply(x, function(w) {
+    if (w >= sci.threshold) {
+      w <- round(w, digits = digits.nonsci)
+    } else {
+      part1 <- round(w/10^floor(log10(abs(w))), digits = digits.sci)
+      part2 <- floor(log10(abs(w)))
+      if (part1 == 10) {
+        part1 <- 1.0
+        part2 <- part2 + 1
+      }
+      w <- paste0(part1, "x10<sup>", part2, "</sup>")
+    }
+    if (add.p) {
+      if (use.padj)
+        add.p <- "*P<sub>adj</sub>*"
+      else
+        add.p <- "*p*"
+      if (show.equal.sign)
+        add.p <- paste0(add.p, " =")
+      if (new.line)
+        add.p <- paste0(add.p, "<br>")
+
+      w <- paste0(add.p, w)
+    }
+    return(w)
+  })
+
+  # sprintf(paste0("p=g%.", digits, "f*x*10^%g"), w/10^floor(log10(abs(w))), floor(log10(abs(w))))
+}
+
 pvalue.cal <- function(df, external.p.df = NULL, adjust = NULL,
                        x, y, split.by = NULL, splits = NULL,
                        group.by, group.1, group.2,
                        ymax = NULL, nudge.by.fraction = T,
                        pval.bar.y.nudge = 0.05,
-                       pval.text.y.nudge = 0.1) {
+                       pval.text.y.nudge = 0.1, ...) {
   # the idea is to compare group.1 vs group.2 using a t.test().
   # note we are testing group.2 against group.1.
   # sometimes we need to split the data first (for example, when we have multiple genes)
@@ -418,7 +478,7 @@ pvalue.cal <- function(df, external.p.df = NULL, adjust = NULL,
         }
         res$p <- p
       } else {
-        t.res <- t.test(ys$g2, ys$g1)
+        t.res <- t.test(ys$g2, ys$g1, ...)
         res$p <- t.res$p.value
       }
       x.means <- sapply(xs, mean)
@@ -450,11 +510,14 @@ pvalue.cal <- function(df, external.p.df = NULL, adjust = NULL,
 
   # format p values for presentation.
   res$p.sci <- res$p %>% sapply(function(x) {
-    if (x < 0.0001) {
-      x <- format(x, scientific = T)
-    } else {
-      x <- round(x, digits = 4)
-    }
+    # if (x < 0.0001) {
+    #
+    # } else {
+    #   x <- round(x, digits = 4)
+    # }
+    x <- scientific.superscript.md(x, add.p = T, use.padj = !is.null(adjust), show.equal.sign = is.null(adjust),
+                                   sci.threshold = 0.001, digits.nonsci = 3,
+                                   ...)
   })
   # pvalues lower than 0.0001 will be converted to scientific annotations
 
@@ -465,3 +528,9 @@ pvalue.cal <- function(df, external.p.df = NULL, adjust = NULL,
   res <- dplyr::left_join(res, star, by = "level")
   return(res)
 }
+
+# plot.table.fanc <- function(df, x, y, cell.width = "auto", plot.out) {
+#   utilsFanc::check.intersect(c(x, y), "required columns", colnames(df), "colnames(df)")
+#
+#   ggplot(df, aes_string(x = x, y = y))
+# }
