@@ -142,6 +142,7 @@ png.wrap <- function (pngs, add.title = F,
 
 barplot.pub.3 <- function(df, x, y, color.by = NULL, show.legend = T,
                           shape.by = NULL, black.dots = F, jitter.dots = F,
+                          dot.fill.color = NULL,
                           palette.fc = "R4.fc2",
                           genomic.x = NULL, genomic.rescale = T, genomic.scale.to = NULL,
                           bar.width = 0.9, dodge.width = 1,
@@ -149,9 +150,10 @@ barplot.pub.3 <- function(df, x, y, color.by = NULL, show.legend = T,
                           bar.line.size = 0.8,
                           show.error.bar = T, error.bar.line.size = 0.2,error.bar.width = 0.6,
                           spread.seed = 0, spread.width = 0.5, spread.bin.size = NULL,
+                          axis.expand = 0.2,
                           add.pval = F, pval.adjust = NULL,
                           pval.group.1, pval.group.2, pval.use.star = T,
-                          pval.bar.y.nudge = 0.08, pval.text.y.nudge = 0.14,
+                          pval.bar.y.nudge = 0.08, pval.text.y.nudge = 0.16,
                           pval.same.y = F,
                           ...) {
   # dodge.width is the width of all dodging bars together.
@@ -273,6 +275,11 @@ barplot.pub.3 <- function(df, x, y, color.by = NULL, show.legend = T,
       point.params$shape <- NULL
       point.params$show.legend <- T
     }
+
+    if (!is.null(dot.fill.color)) {
+      point.params$fill <- dot.fill.color
+    }
+
     if (black.dots) {
       point.params$shape <- 19
     }
@@ -297,7 +304,7 @@ barplot.pub.3 <- function(df, x, y, color.by = NULL, show.legend = T,
 
   }
   p <- p + scale_x_continuous(breaks = unique(df$fac), labels = unique(df[, x]),
-                              expand = expansion(add = 0.2))
+                              expand = expansion(add = axis.expand))
 
   if (add.pval) {
     pval.df <- pvalue.cal(df = df, adjust = pval.adjust,
@@ -320,7 +327,7 @@ barplot.pub.3 <- function(df, x, y, color.by = NULL, show.legend = T,
         aes_string(x = "x.mid", y = "y.text",
                    label = ifelse(pval.use.star, "star", "p.sci")),
         family = "Arial",
-        size = 2,
+        size = 5 * 0.36,
         inherit.aes = F
       )
     } else {
@@ -347,7 +354,8 @@ barplot.pub.3 <- function(df, x, y, color.by = NULL, show.legend = T,
 
 
 theme.fc.1 <- function(p, text.size = 6, rm.x.ticks = F, rotate.x.45 = F,
-                       italic.x = T, no.guides.order = F, font = "Arial") {
+                       italic.x = T, remove.axis.titles = T,
+                       no.guides.order = F, font = "Arial") {
   p <- p + theme_classic() +
     theme(text = element_text(size = text.size, color = "black",
                               # family = "Arial"
@@ -362,7 +370,6 @@ theme.fc.1 <- function(p, text.size = 6, rm.x.ticks = F, rotate.x.45 = F,
           legend.box = "vertical",
           legend.title = element_blank(),
           legend.text = element_text(size = text.size, family = font),
-          axis.title = element_blank(),
           axis.text.x = element_text(
             face = ifelse(italic.x, "italic", "plain"), size = text.size, family = font,
             color = "black"),
@@ -381,6 +388,13 @@ theme.fc.1 <- function(p, text.size = 6, rm.x.ticks = F, rotate.x.45 = F,
   if (rotate.x.45) {
     p <- p + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
   }
+
+  if (remove.axis.titles) {
+    p <- p + theme(axis.title = element_blank())
+  } else {
+    p <- p + theme(axis.title = element_text(size = text.size, family = font, color = "black"))
+  }
+
   if (!no.guides.order)
   p <- p + guides(fill = guide_legend(order=1),
            shape = guide_legend(order=2))
@@ -438,6 +452,10 @@ pvalue.cal <- function(df, external.p.df = NULL, adjust = NULL,
   # y is used to calculate where the bar should be placed in terms of the y axis.
   # y is also the value to be compared
   # eg: group.by = "genotype", group.1 = "WT", group.2 = "KO"
+
+  # Newly added 2024-10-01: group.1 and group.2 could be 2 vectors, in which case multiple comparisons will be performed.
+  # Newly added 2024-10-01: if group.1 is NULL, then we will do all group comparisons
+
   # scientific.thresh: p values smaller than this will be converted to scientific notations.
   # nudge values: the bars and texts should be higher than points!
   # they are specified as fractions of the y range (specified by ymax). when ymax
@@ -457,56 +475,120 @@ pvalue.cal <- function(df, external.p.df = NULL, adjust = NULL,
   if (!is.null(splits)) {
     df <- df[df[, split.by] %in% splits, ]
   }
+
+  if (is.null(ymax)) {
+    ymax <- max(df[, y])
+  }
+
+  if (nudge.by.fraction) {
+    pval.bar.y.nudge <- pval.bar.y.nudge * ymax
+    pval.text.y.nudge <- pval.text.y.nudge * ymax
+  }
+
   res <- df %>% split(., f = .[, split.by]) %>%
     lapply(function(df) {
+
+      if (!is.factor(df[, group.by])) {
+        stop("When calculating p values across all possible comparisons, group.by must be factor")
+      }
+      all.groups <- df[, group.by] %>% levels()
+      max.df <- df %>% dplyr::group_by(!!as.name(group.by)) %>%
+        dplyr::summarise(max = max(!!as.name(y))) %>%
+        dplyr::ungroup() %>% as.data.frame()
+
+      max.vec <- max.df$max
+      names(max.vec) <- max.df[, group.by]
+      max.vec <- max.vec[all.groups]
+
+      if (is.null(group.1)) {
+
+        aj <- lapply(1:(length(all.groups) - 1), function(i) {
+          lapply((i+1):length(all.groups), function(j) {
+            groups <- all.groups[c(i, j)]
+            max <- max(max.vec[groups])
+            min <- min(max.vec[groups])
+            df <- data.frame(group.1 = all.groups[i], group.2 = all.groups[j],
+                             max = max, min = min, group.dist = j - i)
+            return(df)
+          }) %>% do.call(rbind, .) %>% return()
+        }) %>% do.call(rbind, .)
+
+        aj <- aj %>% dplyr::arrange(group.dist, max, min)
+
+        group.1 <- aj$group.1
+        group.2 <- aj$group.2
+
+      }
+
       utilsFanc::check.intersect(
         c(group.1, group.2), "groups",
         df[, group.by], paste0("the groups of split ", df[1, split.by]))
-      groups <- list(g1 = group.1, g2 = group.2)
-      ys <- lapply(groups, function(group) return(df[df[, group.by] == group, y]))
-      xs <- lapply(groups, function(group) return(df[df[, group.by] == group, x]))
-      res <- list()
-      if (!is.null(external.p.df)) {
-        p <- external.p.df[
-          external.p.df[, split.by] == df[, split.by][1] &
-            external.p.df[, "group.1"] == group.1 &
-            external.p.df[, "group.2"] == group.2,
-          "p"]
-        if (length(p) != 1) {
-          stop(paste0("no pvalue or more than 1 pvalue found in external.p.df for split: ",
-                      df[, split.by][1]))
-        }
-        res$p <- p
-      } else {
-        t.res <- t.test(ys$g2, ys$g1, ...)
-        res$p <- t.res$p.value
+
+      if (length(group.1) != length(group.2)) {
+        stop("length(group.1) != length(group.2)")
       }
-      x.means <- sapply(xs, mean)
-      res$x.start <- min(x.means)
-      res$x.end <- max(x.means)
-      res$x.mid <- mean(c(res$x.start, res$x.end))
-      res$y.loc <- max(unlist(ys))
-      res[[split.by]] <- df[, split.by][1]
-      res <- as.data.frame(res)
-      return(res)
+
+      utilsFanc::check.dups(paste0(group.1, group.2), "paste0(group.1, group.2)")
+      res.all <- list()
+      yloc.plus.bar <- max.vec
+
+      for (i in 1:length(group.1)) {
+        groups <- list(g1 = group.1[i], g2 = group.2[i])
+        ys <- lapply(groups, function(group) return(df[df[, group.by] == group, y]))
+        xs <- lapply(groups, function(group) return(df[df[, group.by] == group, x]))
+        res <- list(group.1 = groups$g1, group.2 = groups$g2,
+                    group.level.1 = which(all.groups == groups$g1),
+                    group.level.2 = which(all.groups == groups$g2))
+
+        if (!is.null(external.p.df)) {
+          p <- external.p.df[
+            external.p.df[, split.by] == df[, split.by][1] &
+              external.p.df[, "group.1"] == groups$g1 &
+              external.p.df[, "group.2"] == groups$g2,
+            "p"]
+          if (length(p) != 1) {
+            stop(paste0("no pvalue or more than 1 pvalue found in external.p.df for split: ",
+                        df[, split.by][1]))
+          }
+          res$p <- p
+        } else {
+          t.res <- t.test(ys$g2, ys$g1, ...)
+          res$p <- t.res$p.value
+        }
+        x.means <- sapply(xs, mean)
+        res$x.start <- min(x.means)
+        res$x.end <- max(x.means)
+        res$x.mid <- mean(c(res$x.start, res$x.end))
+        res$y.loc <- max(unlist(ys))
+
+        levels.across <- c(min(res$group.level.1, res$group.level.2):max(res$group.level.1, res$group.level.2))
+
+        bar.base <- max(yloc.plus.bar[levels.across])
+        res$y.bar <- bar.base + pval.bar.y.nudge
+        res$y.text <- bar.base + pval.text.y.nudge
+
+
+        yloc.plus.bar[levels.across] <- max(res$y.bar, res$y.text)
+
+        res[[split.by]] <- df[, split.by][1]
+
+        res <- as.data.frame(res)
+
+        if (i == 1)
+          res.all <- res
+        else
+          res.all <- rbind(res.all, res)
+      }
+      return(res.all)
     }) %>% do.call(rbind, .)
+
+
   if (split.by == "tmp") {
     res$tmp <- NULL
   }
   if (!is.null(adjust)) {
     res$p <- res$p %>% p.adjust(method = adjust)
   }
-
-  # now we calculate where the bar and the text should be displayed.
-  if (is.null(ymax)) {
-    ymax <- max(res$y.loc)
-  }
-  if (nudge.by.fraction) {
-    pval.bar.y.nudge <- pval.bar.y.nudge * ymax
-    pval.text.y.nudge <- pval.text.y.nudge * ymax
-  }
-  res$y.bar <- res$y.loc + pval.bar.y.nudge
-  res$y.text <- res$y.loc + pval.text.y.nudge
 
   # format p values for presentation.
   res$p.sci <- res$p %>% sapply(function(x) {
