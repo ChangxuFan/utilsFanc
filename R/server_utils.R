@@ -24,3 +24,5 @@ add.pwd <- function(filename) {
 	names(out) <- NULL
 	return(out)
 }
+
+RIS.FTP.HEADER <- "https://compute1-exec-135.compute.ris.wustl.edu:8288/"
