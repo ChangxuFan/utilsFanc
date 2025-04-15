@@ -14,16 +14,20 @@ insert.name.2 <- function(name, insert, ext, pre = ".", trim.dir=F) {
 }
 
 insert.name.before.ext <- function(name, insert, delim = ".") {
-  if (grepl(".gz$", name)) {
-    name <- sub(".gz$", "", name)
-    extra <- ".gz"
-  } else {
-    extra <- ""
-  }
-  root.name <- tools::file_path_sans_ext(name)
-  ext <- tools::file_ext(name)
-  out.name <- paste0(root.name, delim, insert, ".", ext, extra)
-  return(out.name)
+  out <- sapply(name, function(name) {
+    if (grepl(".gz$", name)) {
+      name <- sub(".gz$", "", name)
+      extra <- ".gz"
+    } else {
+      extra <- ""
+    }
+    root.name <- tools::file_path_sans_ext(name)
+    ext <- tools::file_ext(name)
+    out.name <- paste0(root.name, delim, insert, ".", ext, extra)
+    return(out.name)
+  })
+  names(out) <- NULL
+  return(out)
 }
 
 
